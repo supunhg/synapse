@@ -50,6 +50,28 @@ static int ResolveFullPathA(const char *inputPath, char *outputPath, DWORD outpu
     return WideCharToMultiByte(CP_ACP, 0, wideOutput, -1, outputPath, outputCount, NULL, NULL) != 0;
 }
 
+static DWORD_PTR FindRemoteModuleBase(DWORD pid, const char *moduleName) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+    MODULEENTRY32 moduleEntry;
+
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    moduleEntry.dwSize = sizeof(moduleEntry);
+    if (Module32First(snapshot, &moduleEntry)) {
+        do {
+            if (_stricmp(moduleEntry.szModule, moduleName) == 0) {
+                CloseHandle(snapshot);
+                return (DWORD_PTR)moduleEntry.modBaseAddr;
+            }
+        } while (Module32Next(snapshot, &moduleEntry));
+    }
+
+    CloseHandle(snapshot);
+    return 0;
+}
+
 DWORD FindProcessId(const char *processName) {
     PROCESSENTRY32 pe32;
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -97,12 +119,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (!GetHandleInformation(hProc, &(DWORD){0})) {
-        printf("OpenProcess returned an invalid handle (%lu)\n", GetLastError());
-        CloseHandle(hProc);
-        return 1;
-    }
-
     size_t pathLen = (strlen(dllFullPath) + 1) * sizeof(wchar_t);
     WCHAR wideDllPath[MAX_PATH * 2];
     if (!MultiByteToWideChar(CP_ACP, 0, dllFullPath, -1, wideDllPath, _countof(wideDllPath))) {
@@ -134,7 +150,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    DWORD_PTR remoteLoaderBase = 0;
+    DWORD_PTR localLoaderOffset = 0;
     LPTHREAD_START_ROUTINE startRoutine = (LPTHREAD_START_ROUTINE)(LPVOID)fLoadLibraryW;
+
+    localLoaderOffset = (DWORD_PTR)fLoadLibraryW - (DWORD_PTR)hKernel;
+    remoteLoaderBase = FindRemoteModuleBase(pid, "kernel32.dll");
+    if (remoteLoaderBase != 0 && localLoaderOffset != 0) {
+        startRoutine = (LPTHREAD_START_ROUTINE)(LPVOID)(remoteLoaderBase + localLoaderOffset);
+    }
+
     HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, startRoutine, remoteMem, 0, NULL);
     if (!hThread) {
         DWORD threadError = GetLastError();
