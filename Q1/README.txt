@@ -1,24 +1,53 @@
-ETW-based upload monitor for Windows
-====================================
+API-hooked upload monitor for Windows
+=====================================
 
-This is the real file-I/O observation path again. It uses ETW to watch file
-activity and network sends, then correlates them by PID and timestamp so the
-monitor can print likely upload activity to the terminal and log file.
+Q1 now uses a DLL injected into the target process. The DLL hooks `CreateFileW`, `ReadFile`, `connect`, `send`, `WSASend`, and `closesocket` through the vendor MinHook-compatible layer in `third_party/MinHook`.
 
-COMPILE ON WINDOWS (as Administrator):
+Build
+-----
 
-MSVC (Visual Studio Developer Command Prompt):
-  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include advapi32.lib ws2_32.lib iphlpapi.lib
+MSYS2 UCRT64 / MinGW:
 
-MinGW (MSYS2 UCRT64):
-  set PATH=C:\msys64\ucrt64\bin;%PATH%
-  gcc -O2 -municode -o Q1\etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -ladvapi32 -lws2_32 -liphlpapi
+```bat
+cd Q1
+build.bat
+```
 
-RUN (Administrator recommended):
-  cd Q1
-  .\etw_monitor.exe
+Manual commands:
 
-Notes:
-- ETW needs Administrator privileges.
-- If you need the old heuristic fallback, it is still available in the repo as
-  a separate path, but Q1 now points back to the ETW monitor.
+```bat
+set PATH=C:\msys64\ucrt64\bin;%PATH%
+gcc -O2 -Wall -Wextra -I third_party\MinHook\include -I monitor -shared -o monitor.dll monitor\monitor.c monitor\hooks.c monitor\tracking.c monitor\logger.c third_party\MinHook\src\minhook_shim.c -lws2_32 -lpsapi -ladvapi32
+gcc -O2 -Wall -Wextra -I injector -o injector.exe injector\injector.c
+```
+
+Run
+---
+
+1. Start a target process that reads a file and uploads data.
+2. Inject the monitor DLL:
+
+```bat
+cd Q1
+injector.exe chrome.exe C:\Users\Windows\Documents\github\synapse\Q1\monitor.dll
+```
+
+3. Review `Q1\logs\uploads.log` and debugger output.
+
+Expected output
+--------------
+
+```text
+[hook] CreateFileW process=chrome.exe handle=0x00000000000003F4 file=C:\temp\sample.bin access=0x80000000
+[hook] ReadFile process=chrome.exe handle=0x00000000000003F4 bytes=4096
+[hook] connect process=chrome.exe socket=0x00000000000001B8 remote=93.184.216.34:443
+[hook] send process=chrome.exe socket=0x00000000000001B8 bytes=4096
+[upload] timestamp=2026-05-15 14:22:31.123 pid=1234 process=chrome.exe remote=93.184.216.34:443 file=C:\temp\sample.bin bytes=4096
+```
+
+Notes
+-----
+
+- Correlation triggers when the same process reads a file and performs `send()`/`WSASend()` within five seconds.
+- Socket endpoints are resolved using `getpeername()` and `inet_ntop()`.
+- Logs are written to `logs\uploads.log` next to the injected DLL.

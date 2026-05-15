@@ -109,6 +109,19 @@ static void log_line(const WCHAR *line)
     }
 }
 
+static void log_debug_event(const WCHAR *provider, ULONG pid, USHORT event_id, UCHAR opcode, ULONG user_data_length)
+{
+    WCHAR line[512];
+    StringCchPrintfW(line, 512,
+                     L"DBG:\tProvider:%ls\tPID:%lu\tEventId:%u\tOpcode:%u\tUserData:%lu\n",
+                     provider,
+                     pid,
+                     (unsigned)event_id,
+                     (unsigned)opcode,
+                     user_data_length);
+    log_line(line);
+}
+
 static void log_upload_event(ULONG pid, const WCHAR *process, const WCHAR *filepath, ULONG bytes, const WCHAR *remote_ip, USHORT remote_port)
 {
     WCHAR ts_str[64], bytes_str[64];
@@ -191,6 +204,7 @@ static void WINAPI event_record_callback(PEVENT_RECORD pEvent)
     get_process_name(pid, process, 260);
 
     if (IsEqualGUID(&pEvent->EventHeader.ProviderId, &FileIoGuid)) {
+        log_debug_event(L"FileIo", pid, event_id, pEvent->EventHeader.EventDescriptor.Opcode, pEvent->UserDataLength);
         if (event_id == FILE_IO_WRITE || event_id == FILE_IO_READ) {
             WCHAR filepath[MAX_PATH_WIDE];
             extract_filepath(pEvent, filepath, MAX_PATH_WIDE);
@@ -202,6 +216,7 @@ static void WINAPI event_record_callback(PEVENT_RECORD pEvent)
     }
 
     if (IsEqualGUID(&pEvent->EventHeader.ProviderId, &TcpipGuid)) {
+        log_debug_event(L"Tcpip", pid, event_id, pEvent->EventHeader.EventDescriptor.Opcode, pEvent->UserDataLength);
         if (event_id == TCPIP_SEND) {
             WCHAR remote_ip[64];
             USHORT remote_port = 0;
