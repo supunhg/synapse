@@ -4,10 +4,10 @@ Minimal ETW-based upload monitor for Windows
 COMPILE ON WINDOWS (as Administrator):
 
 MSVC (Visual Studio Developer Command Prompt):
-  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include
+  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include advapi32.lib ws2_32.lib iphlpapi.lib
 
 MinGW:
-  gcc -O2 -o etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -lws2_32 -liphlpapi
+  gcc -O2 -o etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -ladvapi32 -lws2_32 -liphlpapi
 
 RUN (requires Administrator):
   .\etw_monitor.exe

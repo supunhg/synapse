@@ -3,6 +3,7 @@
 #include <evntrace.h>
 #include <evntcons.h>
 #include <tdh.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <strsafe.h>
@@ -100,49 +101,21 @@ static void get_process_name(ULONG pid, WCHAR *name, size_t namesize)
         return;
     }
 
-    PROCESSENTRY32 entry;
-    entry.dwSize = sizeof(PROCESSENTRY32);
+    PROCESSENTRY32W entry;
+    entry.dwSize = sizeof(PROCESSENTRY32W);
 
-    if (Process32First(snapshot, &entry)) {
+    if (Process32FirstW(snapshot, &entry)) {
         do {
             if (entry.th32ProcessID == pid) {
-                MultiByteToWideChar(CP_ACP, 0, entry.szExeFile, -1, name, (int)namesize);
+                wcscpy_s(name, namesize, entry.szExeFile);
                 CloseHandle(snapshot);
                 return;
             }
-        } while (Process32Next(snapshot, &entry));
+        } while (Process32NextW(snapshot, &entry));
     }
 
     CloseHandle(snapshot);
     wcscpy_s(name, namesize, L"unknown");
-}
-
-static void log_upload_event(EventRecord *ev)
-{
-    WCHAR ts_str[64], bytes_str[64];
-    format_timestamp(ev->timestamp, ts_str, 64);
-    format_bytes(ev->bytes, bytes_str, 64);
-
-    WCHAR line[2048];
-    StringCchPrintfW(line, 2048,
-                     L"%s\tPID:%lu\tTCP\t%s:%u\t%s:%u\tProcess:%s\tDetectedFile:%s (%s)\n",
-                     ts_str,
-                     ev->pid,
-                     ev->local_ip,
-                     (unsigned)ev->local_port,
-                     ev->remote_ip,
-                     (unsigned)ev->remote_port,
-                     ev->process,
-                     ev->filepath,
-                     bytes_str);
-
-    /* Write to log file and stdout */
-    if (log_file) {
-        fwprintf(log_file, line);
-        fflush(log_file);
-    }
-    wprintf(line);
-    fflush(stdout);
 }
 static void extract_filepath(PEVENT_RECORD pEvent, WCHAR *filepath, size_t fpsize)
 {
@@ -260,7 +233,7 @@ static TRACEHANDLE start_trace(const WCHAR *session_name)
     props.MinimumBuffers = 20;
     props.MaximumBuffers = 500;
 
-    TRACEHANDLE trace_handle = INVALID_HANDLE_VALUE;
+    TRACEHANDLE trace_handle = 0;
     ULONG status = StartTraceW(&trace_handle, session_name, &props);
     
     if (status == ERROR_ALREADY_EXISTS) {
@@ -270,7 +243,7 @@ static TRACEHANDLE start_trace(const WCHAR *session_name)
 
     if (status != ERROR_SUCCESS) {
         wprintf(L"StartTraceW failed: 0x%08X\n", status);
-        return INVALID_HANDLE_VALUE;
+        return 0;
     }
 
     return trace_handle;
@@ -308,7 +281,7 @@ int wmain(int argc, WCHAR *argv[])
     const WCHAR *session_name = L"SynapseMonitor";
     TRACEHANDLE trace_handle = start_trace(session_name);
 
-    if (trace_handle == INVALID_HANDLE_VALUE) {
+    if (trace_handle == 0) {
         wprintf(L"Failed to start trace. Run as Administrator.\n");
         if (log_file) fclose(log_file);
         return 1;
@@ -324,13 +297,12 @@ int wmain(int argc, WCHAR *argv[])
     wprintf(L"Monitoring file uploads... (Ctrl+C to stop)\n");
 
     EVENT_TRACE_LOGFILEW log_file_etw = {0};
-    log_file_etw.LogFileName = (LPWSTR)session_name;
-    log_file_etw.ProcessTraceHandle = 0;
+    log_file_etw.LoggerName = (LPWSTR)session_name;
+    log_file_etw.ProcessTraceMode = PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD;
     log_file_etw.EventRecordCallback = event_record_callback;
-    log_file_etw.LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
 
     TRACEHANDLE consume_handle = OpenTraceW(&log_file_etw);
-    if (consume_handle == INVALID_HANDLE_VALUE) {
+    if (consume_handle == INVALID_PROCESSTRACE_HANDLE) {
         wprintf(L"OpenTraceW failed: %ld\n", GetLastError());
         ControlTraceW(trace_handle, session_name, NULL, EVENT_TRACE_CONTROL_STOP);
         if (log_file) fclose(log_file);

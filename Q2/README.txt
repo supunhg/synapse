@@ -1,8 +1,8 @@
 ETW-Based Upload Monitor - Q2 & Q3 Deliverable
 =================================================
 
-This folder contains the complete Windows-based file upload monitoring tool with Windows Service integration.
-Source files are available in Q1/. This README describes compilation, usage, and service installation.
+This folder contains the Windows Service deliverable for auto-start monitoring.
+Standalone monitor source remains in Q1/. This README describes compilation, usage, and service installation.
 
 ============================================
 Q2: STANDALONE EXECUTABLE (Manual Monitoring)
@@ -12,11 +12,11 @@ COMPILATION (on Windows with Administrator privileges):
 
 MSVC (Visual Studio Developer Command Prompt):
   cd /path/to/synapse
-  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include
+  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include advapi32.lib ws2_32.lib iphlpapi.lib
 
 MinGW:
   cd /path/to/synapse
-  gcc -O2 -o etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -lws2_32 -liphlpapi
+  gcc -O2 -o etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -ladvapi32 -lws2_32 -liphlpapi
 
 RUN (requires Administrator privileges):
   .\etw_monitor.exe
@@ -45,7 +45,7 @@ Option 1: Using the batch script (recommended)
 
 Option 2: Manual compilation and installation
   1. Compile:
-     cl /nologo /W3 /Fe:etw_service.exe Q1\src\etw_service.c /I Q1\include
+    cl /nologo /W3 /Fe:etw_service.exe Q2\src\etw_service.c /I Q2\include advapi32.lib ws2_32.lib iphlpapi.lib
   
   2. Install service (requires Admin):
      etw_service.exe install

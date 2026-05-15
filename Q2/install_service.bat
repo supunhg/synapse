@@ -8,7 +8,7 @@ echo Step 1: Compiling etw_service.c
 echo.
 
 REM Compile the service
-cl /nologo /W3 /Fe:etw_service.exe Q1\src\etw_service.c /I Q1\include
+cl /nologo /W3 /Fe:etw_service.exe Q2\src\etw_service.c /I Q2\include advapi32.lib ws2_32.lib iphlpapi.lib
 
 if %ERRORLEVEL% NEQ 0 (
     echo Compilation failed!
