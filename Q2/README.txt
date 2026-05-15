@@ -1,4 +1,48 @@
-ETW-Based Upload Monitor - Q2 & Q3 Deliverable
+API-hooked upload monitor - Q2 deliverable
+=========================================
+
+Q2 contains the same buildable source layout as Q1 plus a sample upload log.
+It is organized for local compilation and for showing the log file output that
+captures upload activity with timestamp, remote endpoint, process name, file
+path, and byte count.
+
+Layout
+------
+
+- `monitor/` - DLL source for the hooked monitor
+- `injector/` - remote loader used to inject the DLL into a target process
+- `third_party/MinHook/` - vendor shim used by the hooks
+- `logs/` - sample log output
+- `screenshots/` - placeholder for screenshots
+
+Build
+-----
+
+MSYS2 UCRT64 / MinGW:
+
+```bat
+cd Q2
+build.bat
+```
+
+Manual commands:
+
+```bat
+set PATH=C:\msys64\ucrt64\bin;%PATH%
+gcc -O2 -Wall -Wextra -I third_party\MinHook\include -I monitor -shared -o monitor.dll monitor\monitor.c monitor\hooks.c monitor\tracking.c monitor\logger.c third_party\MinHook\src\minhook_shim.c -lws2_32 -ladvapi32
+gcc -O2 -Wall -Wextra -I injector -o injector.exe injector\injector.c
+```
+
+Sample log
+----------
+
+`logs\upload_log.txt` contains example output in the expected format.
+
+Notes
+-----
+
+- The sample screenshot folder is kept in the tree even if no image files are present.
+- The Q2 sample log is meant as a reference artifact, not a generated runtime file.ETW-Based Upload Monitor - Q2 & Q3 Deliverable
 =================================================
 
 This folder contains the Windows Service deliverable for auto-start monitoring.
