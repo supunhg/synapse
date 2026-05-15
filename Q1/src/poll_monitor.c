@@ -1,5 +1,9 @@
+#ifndef UNICODE
 #define UNICODE
+#endif
+#ifndef _UNICODE
 #define _UNICODE
+#endif
 #include <windows.h>
 #include <iphlpapi.h>
 #include <tlhelp32.h>
@@ -16,8 +20,69 @@
 
 #define POLL_INTERVAL_MS 2000
 #define RECENT_SECONDS 30
+#define DEDUPE_WINDOW 30
 
 static FILE *log_file = NULL;
+
+typedef struct {
+    DWORD pid;
+    wchar_t remote[64];
+    wchar_t file[MAX_PATH];
+    time_t ts;
+} recent_entry;
+
+static recent_entry recent[256];
+static int recent_count = 0;
+
+static bool should_log_and_update(DWORD pid, const wchar_t *remote, const wchar_t *file) {
+    time_t now = time(NULL);
+    for (int i = 0; i < recent_count; i++) {
+        if (recent[i].pid == pid && wcscmp(recent[i].remote, remote) == 0 && wcscmp(recent[i].file, file) == 0) {
+            if (now - recent[i].ts < DEDUPE_WINDOW) return false;
+            recent[i].ts = now;
+            return true;
+        }
+    }
+    if (recent_count < (int)(sizeof(recent)/sizeof(recent[0]))) {
+        recent[recent_count].pid = pid;
+        wcscpy_s(recent[recent_count].remote, 64, remote);
+        wcscpy_s(recent[recent_count].file, MAX_PATH, file);
+        recent[recent_count].ts = now;
+        recent_count++;
+        return true;
+    }
+    // rotate oldest
+    int oldest = 0;
+    for (int i = 1; i < recent_count; i++) if (recent[i].ts < recent[oldest].ts) oldest = i;
+    recent[oldest].pid = pid;
+    wcscpy_s(recent[oldest].remote, 64, remote);
+    wcscpy_s(recent[oldest].file, MAX_PATH, file);
+    recent[oldest].ts = now;
+    return true;
+}
+
+static bool is_likely_upload_client(const wchar_t *proc) {
+    const wchar_t *names[] = {
+        L"msedge.exe",
+        L"msedgewebview2.exe",
+        L"chrome.exe",
+        L"firefox.exe",
+        L"brave.exe",
+        L"opera.exe",
+        L"webview2.exe"
+    };
+
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (_wcsicmp(proc, names[i]) == 0) return true;
+    }
+
+    return false;
+}
+
+static bool is_temp_path(const wchar_t *path) {
+    return wcsstr(path, L"\\AppData\\Local\\Temp\\") != NULL ||
+           wcsstr(path, L"\\Temp\\") != NULL;
+}
 
 static void format_time_now(wchar_t *buf, size_t bufsize) {
     SYSTEMTIME st;
@@ -80,8 +145,8 @@ static bool file_recent(const wchar_t *path, int seconds) {
 }
 
 static void scan_recent_files_for_pid(DWORD pid, wchar_t *out_file, size_t out_file_sz) {
-    // Heuristic: check common user folders for recently modified files
-    wchar_t *folders[] = {L"Downloads", L"Desktop", L"Documents", L"AppData\\Local\\Temp"};
+    // Heuristic: only treat temp-staged files as likely upload evidence.
+    wchar_t *folders[] = {L"AppData\\Local\\Temp"};
     wchar_t userProfile[MAX_PATH];
     size_t len = GetEnvironmentVariableW(L"USERPROFILE", userProfile, MAX_PATH);
     if (len==0 || len>=MAX_PATH) { out_file[0]=0; return; }
@@ -137,9 +202,20 @@ int wmain(int argc, wchar_t *argv[]) {
                     wchar_t proc[256]; get_process_name(pid, proc, 256);
                     wchar_t recentFile[MAX_PATH]; recentFile[0]=0;
                     scan_recent_files_for_pid(pid, recentFile, MAX_PATH);
-                    if (recentFile[0]!=0) {
-                        // We don't have per-connection bytes; approximate with 0
-                        log_event(pid, proc, remote, recentFile, 0);
+                    if (recentFile[0]!=0 && is_likely_upload_client(proc)) {
+                        WIN32_FILE_ATTRIBUTE_DATA recentFad;
+                        unsigned long long fileSize = 0;
+                        if (GetFileAttributesExW(recentFile, GetFileExInfoStandard, &recentFad)) {
+                            fileSize = (((unsigned long long)recentFad.nFileSizeHigh) << 32) | recentFad.nFileSizeLow;
+                        }
+                        if (fileSize == 0 && is_temp_path(recentFile)) {
+                            continue;
+                        }
+                        // Deduplicate frequent identical reports
+                        if (should_log_and_update(pid, remote, recentFile)) {
+                            // We don't have per-connection bytes; approximate with 0
+                            log_event(pid, proc, remote, recentFile, fileSize);
+                        }
                     }
                 }
             }
