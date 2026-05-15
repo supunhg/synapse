@@ -5,6 +5,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int ResolveFullPathA(const char *inputPath, char *outputPath, DWORD outputCount) {
+    WCHAR wideInput[MAX_PATH * 2];
+    WCHAR wideOutput[MAX_PATH * 2];
+    DWORD wideLen;
+
+    if (!inputPath || !outputPath || outputCount == 0) {
+        return 0;
+    }
+
+    MultiByteToWideChar(CP_ACP, 0, inputPath, -1, wideInput, _countof(wideInput));
+    wideLen = GetFullPathNameW(wideInput, _countof(wideOutput), wideOutput, NULL);
+    if (wideLen == 0 || wideLen >= _countof(wideOutput)) {
+        return 0;
+    }
+
+    return WideCharToMultiByte(CP_ACP, 0, wideOutput, -1, outputPath, outputCount, NULL, NULL) != 0;
+}
+
 DWORD FindProcessId(const char *processName) {
     PROCESSENTRY32 pe32;
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -37,7 +55,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    const char *dllPath = argv[2];
+    char dllFullPath[MAX_PATH * 2];
+    if (!ResolveFullPathA(argv[2], dllFullPath, sizeof(dllFullPath))) {
+        printf("Failed to resolve DLL path (%lu)\n", GetLastError());
+        return 1;
+    }
+
     HANDLE hProc = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
                                PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, pid);
     if (!hProc) {
@@ -45,15 +68,22 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    size_t pathLen = strlen(dllPath) + 1;
-    LPVOID remoteMem = VirtualAllocEx(hProc, NULL, pathLen, MEM_COMMIT, PAGE_READWRITE);
+    size_t pathLen = (strlen(dllFullPath) + 1) * sizeof(wchar_t);
+    WCHAR wideDllPath[MAX_PATH * 2];
+    if (!MultiByteToWideChar(CP_ACP, 0, dllFullPath, -1, wideDllPath, _countof(wideDllPath))) {
+        printf("MultiByteToWideChar failed (%lu)\n", GetLastError());
+        CloseHandle(hProc);
+        return 1;
+    }
+
+    LPVOID remoteMem = VirtualAllocEx(hProc, NULL, pathLen, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (!remoteMem) {
         printf("VirtualAllocEx failed (%lu)\n", GetLastError());
         CloseHandle(hProc);
         return 1;
     }
 
-    if (!WriteProcessMemory(hProc, remoteMem, dllPath, pathLen, NULL)) {
+    if (!WriteProcessMemory(hProc, remoteMem, wideDllPath, pathLen, NULL)) {
         printf("WriteProcessMemory failed (%lu)\n", GetLastError());
         VirtualFreeEx(hProc, remoteMem, 0, MEM_RELEASE);
         CloseHandle(hProc);
@@ -61,15 +91,15 @@ int main(int argc, char **argv) {
     }
 
     HMODULE hKernel = GetModuleHandleA("kernel32.dll");
-    FARPROC fLoadLibraryA = GetProcAddress(hKernel, "LoadLibraryA");
-    if (!fLoadLibraryA) {
-        printf("GetProcAddress(LoadLibraryA) failed\n");
+    FARPROC fLoadLibraryW = GetProcAddress(hKernel, "LoadLibraryW");
+    if (!fLoadLibraryW) {
+        printf("GetProcAddress(LoadLibraryW) failed (%lu)\n", GetLastError());
         VirtualFreeEx(hProc, remoteMem, 0, MEM_RELEASE);
         CloseHandle(hProc);
         return 1;
     }
 
-    LPTHREAD_START_ROUTINE startRoutine = (LPTHREAD_START_ROUTINE)(LPVOID)fLoadLibraryA;
+    LPTHREAD_START_ROUTINE startRoutine = (LPTHREAD_START_ROUTINE)(LPVOID)fLoadLibraryW;
     HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, startRoutine, remoteMem, 0, NULL);
     if (!hThread) {
         printf("CreateRemoteThread failed (%lu)\n", GetLastError());
