@@ -20,7 +20,6 @@ typedef struct {
     WCHAR processName[MAX_PATH];
     char remoteIp[INET6_ADDRSTRLEN];
     int remotePort;
-    ULONGLONG lastConnectTick;
     SIZE_T totalSent;
 } SOCKET_TRACK;
 

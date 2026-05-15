@@ -17,9 +17,6 @@ static void write_utf8_line(const char *line) {
         WriteFile(g_logFile, "\r\n", 2, &written, NULL);
         FlushFileBuffers(g_logFile);
     }
-
-    OutputDebugStringA(line);
-    OutputDebugStringA("\n");
 }
 
 void Logger_Init(HMODULE moduleHandle) {
@@ -39,8 +36,6 @@ void Logger_Init(HMODULE moduleHandle) {
     }
 
     swprintf_s(logPath, _countof(logPath), L"%slogs\\uploads.log", modulePath);
-    CreateDirectoryW(modulePath, NULL);
-
     g_logFile = CreateFileW(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (g_logFile == INVALID_HANDLE_VALUE) {
         g_logFile = NULL;
@@ -93,5 +88,7 @@ void LogUploadA(const char *processName, DWORD pid, const char *remoteIp, int re
              remotePort,
              filePath ? filePath : "unknown",
              (unsigned long long)bytesUploaded);
+    OutputDebugStringA(buffer);
+    OutputDebugStringA("\n");
     write_utf8_line(buffer);
 }

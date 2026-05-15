@@ -177,7 +177,6 @@ void Tracking_AddSocket(SOCKET s, DWORD pid, const WCHAR *processName) {
         wcsncpy_s(entry->processName, _countof(entry->processName), processName ? processName : L"unknown", _TRUNCATE);
         entry->remoteIp[0] = '\0';
         entry->remotePort = 0;
-        entry->lastConnectTick = GetTickCount64();
         entry->totalSent = 0;
         LogDebugA("TrackSocketConnect pid=%lu socket=0x%p", (unsigned long)pid, s);
     }

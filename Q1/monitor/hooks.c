@@ -23,7 +23,6 @@ static connect_t g_realConnect = NULL;
 static send_t g_realSend = NULL;
 static WSASend_t g_realWSASend = NULL;
 static closesocket_t g_realCloseSocket = NULL;
-static HMODULE g_module = NULL;
 static volatile LONG g_hooksReady = 0;
 
 static void get_process_name_a(char *buffer, size_t bufferCount) {
@@ -49,7 +48,6 @@ static void debug_u8(const char *fmt, ...) {
     va_end(ap);
     OutputDebugStringA(buffer);
     OutputDebugStringA("\n");
-    LogDebugA("%s", buffer);
 }
 
 static BOOL resolve_socket_peer(SOCKET s, char *ipbuf, size_t ipbuflen, int *port) {
@@ -109,6 +107,8 @@ static BOOL WINAPI hk_ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfByt
 }
 
 static int WSAAPI hk_connect(SOCKET s, const struct sockaddr *name, int namelen) {
+    (void)name;
+    (void)namelen;
     int result = g_realConnect(s, name, namelen);
     if (result == 0) {
         char ip[INET6_ADDRSTRLEN];
@@ -126,6 +126,9 @@ static int WSAAPI hk_connect(SOCKET s, const struct sockaddr *name, int namelen)
 }
 
 static int WSAAPI hk_send(SOCKET s, const char *buf, int len, int flags) {
+    (void)buf;
+    (void)len;
+    (void)flags;
     int result = g_realSend(s, buf, len, flags);
     if (result > 0) {
         char procUtf8[MAX_PATH];
@@ -269,9 +272,7 @@ void TrackSocketSend(SOCKET s, SIZE_T bytesSent) {
 }
 
 static DWORD WINAPI bootstrap_thread(LPVOID parameter) {
-    HMODULE module = (HMODULE)parameter;
-    g_module = module;
-    Logger_Init(module);
+    Logger_Init((HMODULE)parameter);
     Tracking_Init();
     InitializeHooks();
     return 0;

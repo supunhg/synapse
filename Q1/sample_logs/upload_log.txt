@@ -1,3 +1,0 @@
-2025-12-09 08:47:20	PID:18376	TCP	13.107.11.10:49730	165.22.221.132:443	Process:firefox.exe	DetectedFile:C:\Users\Lanka\AppData\Local\Temp (30MB)
-2025-12-09 08:47:20	PID:18376	TCP	168.1.20.3:433	15.207.65.161:1234	Process:Telegram.exe	DetectedFile:D:\Movies\Avengers(1GB)
-2025-12-09 08:47:22	PID:18376	TCP	192.168.1.3:443	165.22.221.132:443	Process:chrome.exe	DetectedFile:F:\Programme\office.pdf (2000KB)
