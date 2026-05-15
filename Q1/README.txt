@@ -1,14 +1,19 @@
-Build and run instructions for the ETW-based upload monitor.
+Minimal ETW-based upload monitor for Windows
+============================================
 
-On Windows (MSVC - Developer Command Prompt):
+COMPILE ON WINDOWS (as Administrator):
 
-cl /nologo /W3 /Fe:etw_monitor.exe Q1\\src\\correlator.c Q1\\src\\etw_monitor.c /I Q1\\include
+MSVC (Visual Studio Developer Command Prompt):
+  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include
 
-On Windows (MinGW):
+MinGW:
+  gcc -O2 -o etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -lws2_32 -liphlpapi
 
-x86_64-w64-mingw32-gcc -O2 -o etw_monitor.exe Q1/src/correlator.c Q1/src/etw_monitor.c -I Q1/include -lws2_32
+RUN (requires Administrator):
+  .\etw_monitor.exe
 
-Notes:
-- The ETW consumer (`etw_monitor.c`) is Windows-specific and requires Administrator privileges to capture kernel providers.
-- While on macOS, you can build and test the correlator and simulator: see `tools/sim_event_gen.c`.
-- After successful Windows testing, place screenshots and sample logs under the `Q1/` folder for submission.
+WHAT IT DOES:
+1. Starts an ETW kernel trace session
+2. Enables File I/O and TCP/IP providers
+3. Correlates file events with network events by Process ID and timestamp
+4. Prints the required upload details to the console
