@@ -1,19 +1,26 @@
-Minimal ETW-based upload monitor for Windows
+Poll-based heuristic upload detector (fast fallback)
 ============================================
+
+This is a simple, fast fallback implementation that polls active TCP connections
+and heuristically checks common user folders for recently modified files by
+process. It is an approximation and intentionally lightweight.
 
 COMPILE ON WINDOWS (as Administrator):
 
 MSVC (Visual Studio Developer Command Prompt):
-  cl /nologo /W3 /Fe:etw_monitor.exe Q1\src\etw_monitor.c /I Q1\include advapi32.lib ws2_32.lib iphlpapi.lib
+  cl /nologo /W3 /Fe:poll_monitor.exe Q1\src\poll_monitor.c /I Q1\include iphlpapi.lib psapi.lib
 
-MinGW:
-  gcc -O2 -o etw_monitor.exe Q1/src/etw_monitor.c -I Q1/include -ladvapi32 -lws2_32 -liphlpapi
+MinGW (MSYS2 UCRT64):
+  set PATH=C:\msys64\ucrt64\bin;%PATH%
+  gcc -O2 -municode -o Q1\poll_monitor.exe Q1/src/poll_monitor.c -I Q1/include -ladvapi32 -lws2_32 -liphlpapi -lpsapi
 
-RUN (requires Administrator):
-  .\etw_monitor.exe
+RUN (Administrator recommended):
+  cd Q1
+  .\poll_monitor.exe
 
-WHAT IT DOES:
-1. Starts an ETW kernel trace session
-2. Enables File I/O and TCP/IP providers
-3. Correlates file events with network events by Process ID and timestamp
-4. Prints the required upload details to the console
+Notes:
+- This approach is heuristic: it reports likely uploads by pairing ESTABLISHED
+  outbound TCP connections with recently modified files in common directories.
+- It is much easier to run and debug than ETW or kernel approaches, but less
+  precise. Use Procmon correlation (tools/correlate_procmon.py) for stronger
+  evidence when needed.
