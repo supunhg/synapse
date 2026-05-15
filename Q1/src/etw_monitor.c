@@ -4,6 +4,7 @@
 #include <evntcons.h>
 #include <tdh.h>
 #include <tlhelp32.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <strsafe.h>
@@ -223,29 +224,43 @@ static VOID WINAPI event_record_callback(PEVENT_RECORD pEvent)
 
 static TRACEHANDLE start_trace(const WCHAR *session_name)
 {
-    EVENT_TRACE_PROPERTIES props = {0};
-    props.Wnode.BufferSize = sizeof(EVENT_TRACE_PROPERTIES);
-    props.Wnode.ClientContext = 1;
-    props.Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-    props.LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
-    props.EnableFlags = EVENT_TRACE_FLAG_FILE_IO | EVENT_TRACE_FLAG_NETWORK_TCPIP;
-    props.BufferSize = 64;
-    props.MinimumBuffers = 20;
-    props.MaximumBuffers = 500;
+    /* Allocate properties with space for logger name (required by StartTrace) */
+    const size_t nameChars = MAX_PATH + 1;
+    size_t bufSize = sizeof(EVENT_TRACE_PROPERTIES) + nameChars * sizeof(WCHAR) * 2;
+    EVENT_TRACE_PROPERTIES *props = (EVENT_TRACE_PROPERTIES *)malloc(bufSize);
+    if (!props) {
+        wprintf(L"Failed to allocate memory for EVENT_TRACE_PROPERTIES\n");
+        return 0;
+    }
+    ZeroMemory(props, bufSize);
+    props->Wnode.BufferSize = (ULONG)bufSize;
+    props->Wnode.ClientContext = 1;
+    props->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    props->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
+    props->EnableFlags = EVENT_TRACE_FLAG_FILE_IO | EVENT_TRACE_FLAG_NETWORK_TCPIP;
+    props->BufferSize = 64;
+    props->MinimumBuffers = 20;
+    props->MaximumBuffers = 500;
+    props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+
+    WCHAR *nameBuf = (WCHAR *)((BYTE *)props + props->LoggerNameOffset);
+    StringCchCopyW(nameBuf, nameChars, session_name);
 
     TRACEHANDLE trace_handle = 0;
-    ULONG status = StartTraceW(&trace_handle, session_name, &props);
-    
+    ULONG status = StartTraceW(&trace_handle, session_name, props);
+
     if (status == ERROR_ALREADY_EXISTS) {
-        ControlTraceW(trace_handle, session_name, &props, EVENT_TRACE_CONTROL_STOP);
-        status = StartTraceW(&trace_handle, session_name, &props);
+        ControlTraceW(trace_handle, session_name, props, EVENT_TRACE_CONTROL_STOP);
+        status = StartTraceW(&trace_handle, session_name, props);
     }
 
     if (status != ERROR_SUCCESS) {
         wprintf(L"StartTraceW failed: 0x%08X\n", status);
+        free(props);
         return 0;
     }
 
+    free(props);
     return trace_handle;
 }
 

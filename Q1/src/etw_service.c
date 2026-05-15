@@ -5,6 +5,7 @@
 #include <tdh.h>
 #include <tlhelp32.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <wchar.h>
 #include <strsafe.h>
 #include <time.h>
@@ -239,26 +240,37 @@ static DWORD WINAPI monitoring_thread(LPVOID param)
     log_to_file(L"Monitoring thread started");
 
     TRACEHANDLE trace_handle = 0;
-    EVENT_TRACE_PROPERTIES props = {0};
-    props.Wnode.BufferSize = sizeof(EVENT_TRACE_PROPERTIES);
-    props.Wnode.ClientContext = 1;
-    props.Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-    props.LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
-    props.EnableFlags = EVENT_TRACE_FLAG_FILE_IO | EVENT_TRACE_FLAG_NETWORK_TCPIP;
-    props.BufferSize = 64;
-    props.MinimumBuffers = 20;
-    props.MaximumBuffers = 500;
-
     const WCHAR *session_name = L"SynapseMonitorService";
-    ULONG status = StartTraceW(&trace_handle, session_name, &props);
-    
+    const size_t nameChars = MAX_PATH + 1;
+    size_t bufSize = sizeof(EVENT_TRACE_PROPERTIES) + nameChars * sizeof(WCHAR) * 2;
+    EVENT_TRACE_PROPERTIES *props = (EVENT_TRACE_PROPERTIES *)malloc(bufSize);
+    if (!props) {
+        log_to_file(L"Failed to allocate EVENT_TRACE_PROPERTIES");
+        return 1;
+    }
+    ZeroMemory(props, bufSize);
+    props->Wnode.BufferSize = (ULONG)bufSize;
+    props->Wnode.ClientContext = 1;
+    props->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    props->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
+    props->EnableFlags = EVENT_TRACE_FLAG_FILE_IO | EVENT_TRACE_FLAG_NETWORK_TCPIP;
+    props->BufferSize = 64;
+    props->MinimumBuffers = 20;
+    props->MaximumBuffers = 500;
+    props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+
+    WCHAR *nameBuf = (WCHAR *)((BYTE *)props + props->LoggerNameOffset);
+    StringCchCopyW(nameBuf, nameChars, session_name);
+
+    ULONG status = StartTraceW(&trace_handle, session_name, props);
     if (status == ERROR_ALREADY_EXISTS) {
-        ControlTraceW(trace_handle, session_name, &props, EVENT_TRACE_CONTROL_STOP);
-        status = StartTraceW(&trace_handle, session_name, &props);
+        ControlTraceW(trace_handle, session_name, props, EVENT_TRACE_CONTROL_STOP);
+        status = StartTraceW(&trace_handle, session_name, props);
     }
 
     if (status != ERROR_SUCCESS) {
         log_to_file(L"StartTraceW failed");
+        free(props);
         return 1;
     }
 
@@ -279,6 +291,7 @@ static DWORD WINAPI monitoring_thread(LPVOID param)
     if (consume_handle == INVALID_PROCESSTRACE_HANDLE) {
         log_to_file(L"OpenTraceW failed");
         ControlTraceW(trace_handle, session_name, NULL, EVENT_TRACE_CONTROL_STOP);
+        free(props);
         return 1;
     }
 
@@ -289,6 +302,7 @@ static DWORD WINAPI monitoring_thread(LPVOID param)
     ControlTraceW(trace_handle, session_name, NULL, EVENT_TRACE_CONTROL_STOP);
     log_to_file(L"Monitoring thread stopped");
 
+    free(props);
     return 0;
 }
 
