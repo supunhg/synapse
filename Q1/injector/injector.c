@@ -5,6 +5,33 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int EnableDebugPrivilege(void) {
+    HANDLE token = NULL;
+    TOKEN_PRIVILEGES privileges;
+    LUID luid;
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        return 0;
+    }
+
+    if (!LookupPrivilegeValueA(NULL, SE_DEBUG_NAME, &luid)) {
+        CloseHandle(token);
+        return 0;
+    }
+
+    privileges.PrivilegeCount = 1;
+    privileges.Privileges[0].Luid = luid;
+    privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &privileges, sizeof(privileges), NULL, NULL)) {
+        CloseHandle(token);
+        return 0;
+    }
+
+    CloseHandle(token);
+    return GetLastError() == ERROR_SUCCESS;
+}
+
 static int ResolveFullPathA(const char *inputPath, char *outputPath, DWORD outputCount) {
     WCHAR wideInput[MAX_PATH * 2];
     WCHAR wideOutput[MAX_PATH * 2];
@@ -55,6 +82,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    EnableDebugPrivilege();
+
     char dllFullPath[MAX_PATH * 2];
     if (!ResolveFullPathA(argv[2], dllFullPath, sizeof(dllFullPath))) {
         printf("Failed to resolve DLL path (%lu)\n", GetLastError());
@@ -65,6 +94,12 @@ int main(int argc, char **argv) {
                                PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, pid);
     if (!hProc) {
         printf("OpenProcess failed (%lu)\n", GetLastError());
+        return 1;
+    }
+
+    if (!GetHandleInformation(hProc, &(DWORD){0})) {
+        printf("OpenProcess returned an invalid handle (%lu)\n", GetLastError());
+        CloseHandle(hProc);
         return 1;
     }
 
@@ -102,10 +137,16 @@ int main(int argc, char **argv) {
     LPTHREAD_START_ROUTINE startRoutine = (LPTHREAD_START_ROUTINE)(LPVOID)fLoadLibraryW;
     HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, startRoutine, remoteMem, 0, NULL);
     if (!hThread) {
-        printf("CreateRemoteThread failed (%lu)\n", GetLastError());
-        VirtualFreeEx(hProc, remoteMem, 0, MEM_RELEASE);
-        CloseHandle(hProc);
-        return 1;
+        DWORD threadError = GetLastError();
+        printf("CreateRemoteThread failed (%lu), trying CreateRemoteThreadEx\n", threadError);
+
+        hThread = CreateRemoteThreadEx(hProc, NULL, 0, startRoutine, remoteMem, 0, NULL, NULL);
+        if (!hThread) {
+            printf("CreateRemoteThreadEx failed (%lu)\n", GetLastError());
+            VirtualFreeEx(hProc, remoteMem, 0, MEM_RELEASE);
+            CloseHandle(hProc);
+            return 1;
+        }
     }
 
     WaitForSingleObject(hThread, INFINITE);
